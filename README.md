@@ -2,17 +2,25 @@
 
 Terminal-based Python multi-tool.
 
-## Python3+ required
+## Requirements
+- **Python 3.10+**
+- Optional pip packages (see `requirements.txt`)
 
-## Features
-- IP lookup + geo map + distance
-- Password generator
-- Notes + encrypted vault
-- Webhook embed test
-- Style tab (colors, logo, ASCII)
-- Gaming helpers (Windows only)
+## Modes
+### ✅ Windows Mode
+Windows-only features will show (Tools + Gaming).
 
-## Install
+### ✅ Mobile Mode (iSH)
+To run on iPhone/iPad you need:
+- **iSH app** (Alpine Linux terminal on iOS)
+- Python installed inside iSH  
+Some Windows-only features are disabled automatically.
+
+---
+
+## Install (Windows / PC)
 ```bash
+git clone https://github.com/jjk9282-lab/zenik-tool.git
+cd zenik-tool
 pip install -r requirements.txt
 python zenik_tool.py
