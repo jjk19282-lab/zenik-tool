@@ -2,7 +2,7 @@
 
 Terminal-based Python multi-tool.
 
-## python3+ required
+## Python3+ required
 
 ## Features
 - IP lookup + geo map + distance
