@@ -34,5 +34,28 @@ apk add python3 py3-pip git
 git clone https://github.com/jjk9282-lab/zenik-tool.git
 cd zenik-tool
 pip install -r requirements.txt
-python3 zenik_tool.py```
+python3 zenik_tool.py
+```
 
+##### Notes
+Notes
+
+Some tabs are Windows-only (Nmap/Wireshark/ipconfig/powercfg/Roblox launch).
+
+Do NOT upload your config.json or vault files (they’re ignored by .gitignore).
+```bash
+
+Commit that.
+
+---
+
+## 3) Add “Windows / Mobile Plus” inside your Python code
+### A) Add these helper functions near the top (after imports)
+```python
+def is_windows() -> bool:
+    return os.name == "nt"
+
+def is_mobile_mode() -> bool:
+    # Anything non-Windows we treat as "mobile-friendly" mode (includes iSH)
+    return not is_windows()
+```
