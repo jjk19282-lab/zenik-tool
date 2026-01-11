@@ -1,0 +1,20 @@
+# secrets / local files
+config.json
+zenik_vault.bin
+zenik_vault.salt
+notes.txt
+zenik_tool.log
+
+# backups
+vault_backup_*.bin
+vault_backup_*.salt
+vault_autobackup_*.bin
+
+# python junk
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+.env
