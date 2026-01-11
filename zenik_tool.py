@@ -1,19 +1,3 @@
-# ZENIK TOOL v2.7 — FULL CODE (Windows CMD Multi-Tool)
-# Tabs:
-#  [1] IP / NETWORK   (local ip, ip lookup, geo map, distance, wifi ssids)
-#  [2] UTILITIES      (ping, passwords, notes, vault++, webhook, settings, logs)
-#  [3] TOOLS (WIN)    (Nmap SAFE private-only, Wireshark launch, tracert, nslookup, ipconfig, arp, route, dns flush, renew, netstat, file hash)
-#  [4] GAMING (WIN)   (perf snapshot, power plan, temp cleanup, Roblox launchers, shortcuts)
-#  [5] STYLE          (change colors, logo, ASCII style)
-#
-# Optional deps:
-#   pip install colorama cryptography pyperclip
-#
-# Safety notes:
-# - Nmap is restricted to localhost/private IP ranges only (no public scanning).
-# - Wi-Fi scan shows SSID names only (no passwords).
-# - Webhook is user-provided; used for test + IP lookup embed.
-
 import os
 import time
 import platform
@@ -2292,3 +2276,4 @@ def main_menu():
 
 if __name__ == "__main__":
     main_menu()
+
