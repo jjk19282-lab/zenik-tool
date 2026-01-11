@@ -1,13 +1,3 @@
-# ZENIK TOOL v2.8 — FULL CODE (Windows + Mobile/iSH)
-# Mobile/iSH mode auto-disables Windows-only tabs (Tools/Gaming).
-#
-# Optional deps:
-#   pip install colorama cryptography pyperclip
-#
-# Notes:
-# - Wi-Fi SSID scan works on Windows (netsh). On iSH/iOS it will likely not work (iOS limitation).
-# - Nmap features are SAFE-restricted to private/localhost only (no public scanning).
-
 import os
 import time
 import platform
@@ -1787,3 +1777,4 @@ def main_menu():
 
 if __name__ == "__main__":
     main_menu()
+
