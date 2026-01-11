@@ -1,2 +1,16 @@
-# zenik-tool
-Terminal-based Python multi-tool with IP lookup, vault, utilities, gaming helpers, and style customization.
+# ZENIK TOOL
+
+Terminal-based Python multi-tool.
+
+## Features
+- IP lookup + geo map + distance
+- Password generator
+- Notes + encrypted vault
+- Webhook embed test
+- Style tab (colors, logo, ASCII)
+- Gaming helpers (Windows only)
+
+## Install
+```bash
+pip install -r requirements.txt
+python zenik_tool.py
