@@ -1,3 +1,13 @@
+# ZENIK TOOL v2.8 — FULL CODE (Windows + Mobile/iSH)
+# Mobile/iSH mode auto-disables Windows-only tabs (Tools/Gaming).
+#
+# Optional deps:
+#   pip install colorama cryptography pyperclip
+#
+# Notes:
+# - Wi-Fi SSID scan works on Windows (netsh). On iSH/iOS it will likely not work (iOS limitation).
+# - Nmap features are SAFE-restricted to private/localhost only (no public scanning).
+
 import os
 import time
 import platform
@@ -54,7 +64,7 @@ except Exception:
     Fernet = None
 
 APP_NAME = "ZENIK TOOL"
-VERSION = "v2.7"
+VERSION = "v2.8"
 
 CONFIG_FILE = "config.json"
 LOG_FILE = "zenik_tool.log"
@@ -62,6 +72,17 @@ NOTES_FILE = "notes.txt"
 
 VAULT_FILE = "zenik_vault.bin"
 VAULT_SALT_FILE = "zenik_vault.salt"
+
+# ------------------ Mode Detection ------------------
+def is_windows() -> bool:
+    return os.name == "nt"
+
+def is_mobile_mode() -> bool:
+    # Anything non-Windows we treat as mobile-friendly mode (includes iSH)
+    return not is_windows()
+
+def mode_label() -> str:
+    return "WINDOWS" if is_windows() else "MOBILE/iSH"
 
 # ------------------ Config + Logging ------------------
 DEFAULT_CONFIG = {
@@ -185,6 +206,8 @@ def get_logo_text() -> str:
 # ------------------ ASCII Art (Tab art) ------------------
 TAB_ART = {
     "MAIN": r"""
+ .:: ZENIK TOOL ::.
+....................
 """,
     "IPNET": r"""
    . . .  IP / NET
@@ -285,6 +308,7 @@ def header(title: str = "", tab_key: str = "MAIN"):
 
     print(ACCENT + get_logo_text() + RESET)
     print(BRIGHT + ACCENT + f"              {APP_NAME} {VERSION}" + RESET)
+    print(ACCENT + f"              MODE: {mode_label()}" + RESET)  # <-- (4) Mode label added
     if title:
         print(ACCENT + f"              {title}" + RESET)
     print(ACCENT + (line * 60) + RESET)
@@ -374,7 +398,6 @@ def clip_copy(text: str):
         print("\nClipboard copy failed:", e)
 
 def clip_copy_autoclear(text: str, seconds: int):
-    """Copy to clipboard and auto-clear after N seconds (if still unchanged)."""
     if not CLIPBOARD_OK:
         print("\nClipboard not available. Install: pip install pyperclip")
         return
@@ -485,8 +508,8 @@ def webhook_menu():
                 "color": 16711680,
                 "fields": [
                     {"name": "Version", "value": VERSION, "inline": True},
-                    {"name": "Time", "value": now_str(), "inline": True},
-                    {"name": "Status", "value": "Everything OK", "inline": False},
+                    {"name": "Mode", "value": mode_label(), "inline": True},
+                    {"name": "Time", "value": now_str(), "inline": False},
                 ],
                 "footer": {"text": "ZENIK TOOL"},
             }
@@ -529,11 +552,7 @@ def fetch_ip_data(ip: Optional[str]):
         "reverse",
         "mobile","proxy","hosting"
     ])
-    if ip:
-        url = f"http://ip-api.com/json/{ip}?fields={fields}"
-    else:
-        url = f"http://ip-api.com/json/?fields={fields}"
-
+    url = f"http://ip-api.com/json/{ip}?fields={fields}" if ip else f"http://ip-api.com/json/?fields={fields}"
     req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
     with urllib.request.urlopen(req, timeout=8) as response:
         data = json.loads(response.read().decode("utf-8", errors="ignore"))
@@ -728,9 +747,10 @@ def list_nearby_ssids() -> List[str]:
                     name = m.group(1).strip()
                     if name and name.lower() != "<hidden network>":
                         ssids.append(name)
-
-    uniq = []
-    seen = set()
+    else:
+        # iOS/iSH generally cannot scan nearby SSIDs due to platform limits.
+        ssids = []
+    uniq, seen = [], set()
     for s in ssids:
         if s not in seen:
             seen.add(s)
@@ -764,7 +784,10 @@ def network_overview():
     print("\nNearby Wi-Fi networks (SSID only):")
     ssids = list_nearby_ssids()
     if not ssids:
-        print("- (none found or Wi-Fi off / permission)")
+        if is_mobile_mode():
+            print("- Not available on iOS/iSH (platform limitation).")
+        else:
+            print("- (none found or Wi-Fi off / permission)")
     else:
         for i, s in enumerate(ssids[:30], start=1):
             print(f"- {i:02d}. {s}")
@@ -779,8 +802,11 @@ def wifi_scan_only():
 
     ssids = list_nearby_ssids()
     if not ssids:
-        print("No SSIDs found. (Wi-Fi off, driver issue, or permission)")
-        log_event("WiFi scan: none found.")
+        if is_mobile_mode():
+            print("Not supported on iOS/iSH (platform limitation).")
+        else:
+            print("No SSIDs found. (Wi-Fi off, driver issue, or permission)")
+        log_event("WiFi scan: none found / unsupported.")
         pause()
         return
 
@@ -887,7 +913,7 @@ def view_logs():
         print("Could not read logs:", e)
     pause()
 
-# ------------------ Vault (Encrypted + Tags + Backup + Edit + Auto-clipboard-clear) ------------------
+# ------------------ Vault (Encrypted) ------------------
 def vault_available():
     return Fernet is not None
 
@@ -1028,43 +1054,6 @@ def vault_pick_item(items: list) -> Optional[int]:
         return n - 1
     return None
 
-def vault_edit_item(items: list, idx: int):
-    it = items[idx]
-    itype = it.get("type", "note")
-
-    header("VAULT - EDIT ITEM", "VAULT")
-    print("Leave blank to keep current.\n")
-
-    it["title"] = (input(f"Title [{it.get('title','')}]: ").strip() or it.get("title",""))
-
-    current_tags = format_tags(it.get("tags", []))
-    tag_in = input(f"Tags [{current_tags}]: ").strip()
-    if tag_in:
-        it["tags"] = parse_tags(tag_in)
-
-    if itype == "login":
-        u = input(f"Username [{it.get('username','')}]: ").strip()
-        if u:
-            it["username"] = u
-
-        pw = getpass.getpass("Password [hidden] (leave blank to keep): ").strip()
-        if pw:
-            it["password"] = pw
-
-        url = input(f"URL [{it.get('url','')}]: ").strip()
-        if url:
-            it["url"] = url
-
-        note = input(f"Note [{it.get('note','')}]: ").strip()
-        if note:
-            it["note"] = note
-    else:
-        v = input(f"Value [{it.get('value','')}]: ").rstrip()
-        if v:
-            it["value"] = v
-
-    it["updated_at"] = now_str()
-
 def vault_add_note(data: dict) -> bool:
     header("VAULT - ADD NOTE", "VAULT")
     title = input("Title: ").strip()
@@ -1171,81 +1160,6 @@ def vault_copy_menu(items: list):
         clip_copy(it.get("value", ""))
         pause()
 
-def vault_backup_encrypted():
-    if not vault_available():
-        header("VAULT BACKUP", "VAULT")
-        print("Vault requires: pip install cryptography")
-        pause()
-        return
-    header("VAULT BACKUP (ENCRYPTED)", "VAULT")
-    if not os.path.exists(VAULT_FILE):
-        print("No vault file yet.")
-        pause()
-        return
-    f_main = vault_unlock(VAULT_FILE, VAULT_SALT_FILE)
-    if not f_main:
-        return
-    try:
-        data = vault_load(f_main, VAULT_FILE)
-    except Exception as e:
-        print("Could not load vault:", e)
-        pause()
-        return
-    print("\nCreate backup with NEW encryption.")
-    pw = getpass.getpass("Master password again (to encrypt backup): ").strip()
-    if not pw:
-        print("Cancelled.")
-        pause()
-        return
-    backup_name = f"vault_backup_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-    backup_vault = backup_name + ".bin"
-    backup_salt = backup_name + ".salt"
-    salt = os.urandom(16)
-    with open(backup_salt, "wb") as f:
-        f.write(salt)
-    key = derive_key_from_password(pw, salt)
-    f_backup = Fernet(key)
-    vault_save(f_backup, data, backup_vault)
-    log_event(f"Vault encrypted backup created: {backup_vault}")
-    print(f"\nBackup created ✅\n- {backup_vault}\n- {backup_salt}")
-    pause()
-
-def vault_change_password():
-    if not vault_available():
-        header("VAULT", "VAULT")
-        print("Vault requires: pip install cryptography")
-        pause()
-        return
-    header("VAULT - CHANGE PASSWORD", "VAULT")
-    print("This will re-encrypt the vault with a NEW master password.\n")
-    salt = vault_get_or_create_salt(VAULT_SALT_FILE)
-    old_pw = getpass.getpass("Current master password: ").strip()
-    if not old_pw:
-        return
-    old_key = derive_key_from_password(old_pw, salt)
-    old_f = Fernet(old_key)
-    try:
-        current_data = vault_load(old_f, VAULT_FILE)
-    except InvalidToken:
-        print("\nWrong current password.")
-        pause()
-        return
-    new_pw = getpass.getpass("New master password: ").strip()
-    new_pw2 = getpass.getpass("Repeat new master password: ").strip()
-    if not new_pw or new_pw != new_pw2:
-        print("\nPasswords don't match.")
-        pause()
-        return
-    new_salt = os.urandom(16)
-    with open(VAULT_SALT_FILE, "wb") as sf:
-        sf.write(new_salt)
-    new_key = derive_key_from_password(new_pw, new_salt)
-    new_f = Fernet(new_key)
-    vault_save(new_f, current_data, VAULT_FILE)
-    log_event("Vault master password changed (re-encrypted).")
-    print("\nMaster password changed. Vault re-encrypted.")
-    pause()
-
 def vault_menu():
     f = vault_unlock()
     if not f:
@@ -1272,10 +1186,7 @@ def vault_menu():
 [5] Delete item
 [6] Search
 [7] Copy / Reveal (clipboard auto-clear)
-[8] Encrypted backup (export)
-[9] Change master password
-[10] Edit item
-[11] Lock now
+[8] Lock now
 [0] Back
 """)
         choice = input("> ").strip()
@@ -1327,40 +1238,12 @@ def vault_menu():
         elif choice == "7":
             vault_copy_menu(items)
         elif choice == "8":
-            vault_backup_encrypted()
-        elif choice == "9":
-            vault_change_password()
-            return
-        elif choice == "10":
-            header("VAULT - EDIT", "VAULT")
-            if not items:
-                print("No items.")
-                pause()
-                continue
-            idx = vault_pick_item(items)
-            if idx is None:
-                print("Cancelled.")
-                pause()
-                continue
-            vault_edit_item(data["items"], idx)
-            vault_save(f, data, VAULT_FILE)
-            log_event("Vault: item edited.")
-            print("Saved ✅")
-            pause()
-        elif choice == "11":
             header("VAULT", "VAULT")
             print("Locked ✅")
             log_event("Vault locked manually.")
             pause()
             return
         elif choice == "0":
-            if bool(CONFIG.get("vault_backup_on_exit", True)):
-                try:
-                    backup_name = f"vault_autobackup_{datetime.now().strftime('%Y%m%d_%H%M%S')}.bin"
-                    vault_save(f, data, backup_name)
-                    log_event(f"Vault auto-backup created: {backup_name}")
-                except Exception as e:
-                    log_event(f"Vault auto-backup failed: {e}")
             log_event("Vault back.")
             return
         else:
@@ -1373,15 +1256,13 @@ def settings_menu():
         header("SETTINGS (SAVED)", "SETTINGS")
         print(f"Vault autolock minutes: {CONFIG.get('vault_autolock_minutes', DEFAULT_CONFIG['vault_autolock_minutes'])}")
         print(f"Vault clipboard clear seconds: {CONFIG.get('vault_clipboard_clear_seconds', DEFAULT_CONFIG['vault_clipboard_clear_seconds'])}")
-        print(f"Vault backup on exit: {CONFIG.get('vault_backup_on_exit', DEFAULT_CONFIG['vault_backup_on_exit'])}")
         print(f"Password default length: {CONFIG.get('password_default_length', DEFAULT_CONFIG['password_default_length'])}")
         print(f"Password include symbols: {CONFIG.get('password_include_symbols', DEFAULT_CONFIG['password_include_symbols'])}")
         print("""
 [1] Set Vault Auto-lock Minutes
 [2] Set Vault Clipboard Auto-clear Seconds
-[3] Toggle Vault Auto-backup on Exit
-[4] Set Password Default Length
-[5] Toggle Password Symbols Default
+[3] Set Password Default Length
+[4] Toggle Password Symbols Default
 [0] Back
 """)
         c = input("> ").strip()
@@ -1408,12 +1289,6 @@ def settings_menu():
                 print("Cancelled / invalid.")
             pause()
         elif c == "3":
-            CONFIG["vault_backup_on_exit"] = not bool(CONFIG.get("vault_backup_on_exit", True))
-            save_config(CONFIG)
-            log_event(f"Settings: vault_backup_on_exit set to {CONFIG['vault_backup_on_exit']}.")
-            print("Toggled ✅")
-            pause()
-        elif c == "4":
             header("SET PASSWORD DEFAULT LENGTH", "SETTINGS")
             v = input("Length (8-64): ").strip()
             if v.isdigit():
@@ -1425,7 +1300,7 @@ def settings_menu():
             else:
                 print("Cancelled / invalid.")
             pause()
-        elif c == "5":
+        elif c == "4":
             CONFIG["password_include_symbols"] = not bool(CONFIG.get("password_include_symbols", True))
             save_config(CONFIG)
             log_event(f"Settings: password_include_symbols set to {CONFIG['password_include_symbols']}.")
@@ -1463,7 +1338,7 @@ def file_hash_tool():
         log_event(f"File hash failed: {e}")
     pause()
 
-# ------------------ Windows Tools Tab ------------------
+# ------------------ Windows Tools Tab (only used on Windows) ------------------
 def nmap_path_windows() -> Optional[str]:
     p = which("nmap")
     if p:
@@ -1618,158 +1493,6 @@ def ipconfig_all():
     log_event("ipconfig /all viewed.")
     pause()
 
-def arp_table():
-    header("ARP TABLE", "TOOLS")
-    code, out, err = run_cmd(["arp", "-a"], timeout=15)
-    print(out if out else err)
-    log_event("arp -a viewed.")
-    pause()
-
-def route_print():
-    header("ROUTE PRINT", "TOOLS")
-    code, out, err = run_cmd(["route", "print"], timeout=25)
-    print(out if out else err)
-    log_event("route print viewed.")
-    pause()
-
-def flush_dns():
-    header("FLUSH DNS", "TOOLS")
-    print("This runs: ipconfig /flushdns\n")
-    code, out, err = run_cmd(["ipconfig", "/flushdns"], timeout=12)
-    print(out if out else err)
-    log_event("ipconfig /flushdns ran.")
-    pause()
-
-def renew_ip():
-    header("RELEASE/RENEW IP", "TOOLS")
-    print("This runs: ipconfig /release then ipconfig /renew\n")
-    code1, out1, err1 = run_cmd(["ipconfig", "/release"], timeout=25)
-    print(out1 if out1 else err1)
-    print("\n---\n")
-    code2, out2, err2 = run_cmd(["ipconfig", "/renew"], timeout=35)
-    print(out2 if out2 else err2)
-    log_event("ipconfig release/renew ran.")
-    pause()
-
-def netstat_win():
-    header("NETSTAT -ANO", "TOOLS")
-    code, out, err = run_cmd(["netstat", "-ano"], timeout=25)
-    print(out if out else err)
-    log_event("netstat -ano viewed.")
-    pause()
-
-def saved_targets_menu():
-    while True:
-        header("SAVED TARGETS (PRIVATE ONLY)", "TOOLS")
-        targets = CONFIG.get("saved_targets", [])
-        if not targets:
-            print("No saved targets yet.")
-        else:
-            print("Saved targets:")
-            for i, t in enumerate(targets, start=1):
-                print(f" [{i}] {t}")
-
-        print("""
-[1] Add target (private/localhost only)
-[2] Remove target
-[3] Run Nmap SAFE Ping Scan on a saved target
-[4] Run Nmap SAFE Port Scan on a saved target
-[0] Back
-""")
-        c = input("> ").strip()
-
-        if c == "1":
-            header("ADD TARGET", "TOOLS")
-            print("Examples: 192.168.1.10  |  192.168.1.0/24  |  localhost")
-            t = input("Target: ").strip()
-            if not t:
-                continue
-
-            if "/" in t:
-                ok, msg = safe_network_guard(t)
-                if not ok:
-                    print(msg)
-                    pause()
-                    continue
-            else:
-                ok, msg = safe_target_guard(t)
-                if not ok:
-                    print(msg)
-                    pause()
-                    continue
-
-            targets = CONFIG.get("saved_targets", [])
-            if t not in targets:
-                targets.append(t)
-                CONFIG["saved_targets"] = targets
-                save_config(CONFIG)
-                log_event(f"Saved target added: {t}")
-                print("Saved ✅")
-            else:
-                print("Already saved.")
-            pause()
-
-        elif c == "2":
-            header("REMOVE TARGET", "TOOLS")
-            targets = CONFIG.get("saved_targets", [])
-            if not targets:
-                print("Nothing to remove.")
-                pause()
-                continue
-            for i, t in enumerate(targets, start=1):
-                print(f"[{i}] {t}")
-            s = input("Pick number: ").strip()
-            if not s.isdigit():
-                continue
-            idx = int(s) - 1
-            if 0 <= idx < len(targets):
-                removed = targets.pop(idx)
-                CONFIG["saved_targets"] = targets
-                save_config(CONFIG)
-                log_event(f"Saved target removed: {removed}")
-                print("Removed ✅")
-            pause()
-
-        elif c == "3":
-            targets = CONFIG.get("saved_targets", [])
-            if not targets:
-                print("No targets saved.")
-                pause()
-                continue
-            header("RUN SAFE PING SCAN", "TOOLS")
-            for i, t in enumerate(targets, start=1):
-                print(f"[{i}] {t}")
-            s = input("Pick: ").strip()
-            if not s.isdigit():
-                continue
-            idx = int(s) - 1
-            if 0 <= idx < len(targets):
-                nmap_safe_ping_scan_windows(targets[idx])
-
-        elif c == "4":
-            targets = CONFIG.get("saved_targets", [])
-            if not targets:
-                print("No targets saved.")
-                pause()
-                continue
-            header("RUN SAFE PORT SCAN", "TOOLS")
-            for i, t in enumerate(targets, start=1):
-                print(f"[{i}] {t}")
-            s = input("Pick: ").strip()
-            if not s.isdigit():
-                continue
-            idx = int(s) - 1
-            if 0 <= idx < len(targets):
-                ports = input("Ports (default 1-1024): ").strip() or "1-1024"
-                nmap_safe_port_scan_windows(targets[idx], ports)
-
-        elif c == "0":
-            return
-
-        else:
-            print("Invalid.")
-            time.sleep(0.6)
-
 def tools_tab():
     while True:
         header("TAB 3 — TOOLS (WINDOWS)", "TOOLS")
@@ -1782,18 +1505,11 @@ def tools_tab():
 [1] Nmap: Check installed/version
 [2] Nmap: SAFE Ping Scan (private/localhost only)
 [3] Nmap: SAFE Port Scan (ports <=1024, private/localhost only)
-[4] Saved Targets (private-only quick scans)
-[5] Wireshark: Launch
-[6] tracert (route to host)
-[7] nslookup (DNS)
-[8] ipconfig /all
-[9] ARP table (arp -a)
-[10] Route table (route print)
-[11] Flush DNS (ipconfig /flushdns)
-[12] Release/Renew IP (ipconfig /release + /renew)
-[13] netstat -ano
-[14] File Hash (SHA256/MD5)
-[15] Open official download pages (Nmap/Wireshark)
+[4] Wireshark: Launch
+[5] tracert (route to host)
+[6] nslookup (DNS)
+[7] ipconfig /all
+[8] File Hash (SHA256/MD5)
 [0] Back
 """)
         c = input("> ").strip()
@@ -1802,52 +1518,25 @@ def tools_tab():
             nmap_info_windows()
         elif c == "2":
             header("NMAP — SAFE PING SCAN", "TOOLS")
-            print("Allowed: localhost or PRIVATE ranges only (example: 192.168.1.0/24).")
             target = input("Target: ").strip()
             if target:
                 nmap_safe_ping_scan_windows(target)
         elif c == "3":
             header("NMAP — SAFE PORT SCAN", "TOOLS")
-            print("Allowed: localhost or PRIVATE IPs only (example: 192.168.1.10).")
             target = input("Target: ").strip()
             if target:
                 ports = input("Ports (default 1-1024): ").strip() or "1-1024"
                 nmap_safe_port_scan_windows(target, ports)
         elif c == "4":
-            saved_targets_menu()
-        elif c == "5":
             wireshark_launch_windows()
-        elif c == "6":
+        elif c == "5":
             tracert_tool()
-        elif c == "7":
+        elif c == "6":
             nslookup_tool()
-        elif c == "8":
+        elif c == "7":
             ipconfig_all()
-        elif c == "9":
-            arp_table()
-        elif c == "10":
-            route_print()
-        elif c == "11":
-            flush_dns()
-        elif c == "12":
-            renew_ip()
-        elif c == "13":
-            netstat_win()
-        elif c == "14":
+        elif c == "8":
             file_hash_tool()
-        elif c == "15":
-            header("DOWNLOAD PAGES", "TOOLS")
-            print("[1] Open Nmap download")
-            print("[2] Open Wireshark download")
-            print("[0] Back")
-            k = input("> ").strip()
-            if k == "1":
-                open_url("https://nmap.org/download.html")
-                log_event("Opened Nmap download page.")
-            elif k == "2":
-                open_url("https://www.wireshark.org/download.html")
-                log_event("Opened Wireshark download page.")
-            pause()
         elif c == "0":
             return
         else:
@@ -1855,212 +1544,10 @@ def tools_tab():
             time.sleep(0.6)
 
 # ------------------ GAMING TAB (Windows) ------------------
-def find_latest_roblox_exe(exe_name: str) -> Optional[str]:
-    base = os.path.expandvars(r"%LOCALAPPDATA%\Roblox\Versions")
-    if not os.path.isdir(base):
-        return None
-    best = None
-    best_mtime = -1.0
-    try:
-        for folder in os.listdir(base):
-            p = os.path.join(base, folder, exe_name)
-            if os.path.exists(p):
-                m = os.path.getmtime(p)
-                if m > best_mtime:
-                    best_mtime = m
-                    best = p
-    except Exception:
-        return None
-    return best
-
-def open_task_manager():
-    header("TASK MANAGER", "GAMING")
-    try:
-        subprocess.Popen(["taskmgr"])
-        log_event("Opened Task Manager.")
-        print("Opened ✅")
-    except Exception as e:
-        print("Failed:", e)
-    pause()
-
-def open_resource_monitor():
-    header("RESOURCE MONITOR", "GAMING")
-    try:
-        subprocess.Popen(["resmon"])
-        log_event("Opened Resource Monitor.")
-        print("Opened ✅")
-    except Exception as e:
-        print("Failed:", e)
-    pause()
-
-def open_dxdiag():
-    header("DXDIAG (DirectX Diagnostic)", "GAMING")
-    try:
-        subprocess.Popen(["dxdiag"])
-        log_event("Opened dxdiag.")
-        print("Opened ✅")
-    except Exception as e:
-        print("Failed:", e)
-    pause()
-
-def open_windows_gaming_settings():
-    header("WINDOWS GAMING SETTINGS", "GAMING")
-    try:
-        os.startfile("ms-settings:gaming-gamemode")  # type: ignore
-        os.startfile("ms-settings:gaming-gamebar")   # type: ignore
-        log_event("Opened Windows gaming settings.")
-        print("Opened ✅")
-    except Exception:
-        print("Could not open settings automatically.")
-    pause()
-
-def open_graphics_settings():
-    header("GRAPHICS SETTINGS (per-app GPU)", "GAMING")
-    try:
-        os.startfile("ms-settings:display-advancedgraphics")  # type: ignore
-        log_event("Opened graphics settings.")
-        print("Opened ✅")
-    except Exception:
-        print("Could not open graphics settings.")
-    pause()
-
-def set_high_performance_power_plan():
-    header("POWER PLAN (High performance)", "GAMING")
-    code, out, err = run_cmd(["powercfg", "/L"], timeout=15)
-    text = out if out else err
-    print(text)
-
-    guid = None
-    for line in text.splitlines():
-        if "High performance" in line:
-            m = re.search(r"([A-F0-9]{8}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{12})", line, re.I)
-            if m:
-                guid = m.group(1)
-                break
-
-    if not guid:
-        print("\nHigh performance plan not found (some PCs only have Balanced).")
-        pause()
-        return
-
-    code2, out2, err2 = run_cmd(["powercfg", "/S", guid], timeout=10)
-    if code2 == 0:
-        print("\nSet to High performance ✅")
-        log_event("Power plan set to High performance.")
-    else:
-        print("\nFailed to set power plan.")
-        print(out2 if out2 else err2)
-        log_event("Power plan set failed.")
-    pause()
-
-def temp_cleanup_safe():
-    header("TEMP CLEANUP (SAFE)", "GAMING")
-    temp = os.getenv("TEMP") or ""
-    if not temp or not os.path.isdir(temp):
-        print("TEMP folder not found.")
-        pause()
-        return
-
-    print("Deletes TEMP files that can be deleted (some will fail if in use).")
-    yn = input("Proceed? (y/n): ").strip().lower()
-    if yn not in ("y", "yes"):
-        print("Cancelled.")
-        pause()
-        return
-
-    deleted = 0
-    failed = 0
-    for root, _, files in os.walk(temp):
-        for name in files:
-            p = os.path.join(root, name)
-            try:
-                os.remove(p)
-                deleted += 1
-            except Exception:
-                failed += 1
-
-    print(f"\nDeleted: {deleted} files")
-    print(f"Failed:  {failed} files (normal)")
-    log_event(f"Temp cleanup: deleted={deleted}, failed={failed}")
-    pause()
-
-def perf_snapshot():
-    header("PERF SNAPSHOT", "GAMING")
-    print("OS:", platform.system(), platform.release())
-    print("CPU:", platform.processor() or "Unknown")
-    code, out, err = run_cmd(["wmic", "path", "win32_VideoController", "get", "name"], timeout=15)
-    if out.strip():
-        print("\nGPU(s):\n" + out.strip())
-    else:
-        print("\nGPU(s): (couldn't read)")
-    pause()
-
-def launch_roblox_player():
-    header("LAUNCH ROBLOX PLAYER", "GAMING")
-    p = find_latest_roblox_exe("RobloxPlayerBeta.exe")
-    if not p:
-        print("Roblox Player not found.")
-        pause()
-        return
-    subprocess.Popen([p], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    log_event("Launched Roblox Player.")
-    print("Launched ✅")
-    pause()
-
-def launch_roblox_studio():
-    header("LAUNCH ROBLOX STUDIO", "GAMING")
-    p = find_latest_roblox_exe("RobloxStudioBeta.exe")
-    if not p:
-        print("Roblox Studio not found.")
-        pause()
-        return
-    subprocess.Popen([p], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-    log_event("Launched Roblox Studio.")
-    print("Launched ✅")
-    pause()
-
 def gaming_tab():
-    while True:
-        header("TAB 4 — GAMING (WINDOWS)", "GAMING")
-        print("""
-[1] Perf snapshot (CPU/GPU)
-[2] Open Task Manager
-[3] Open Resource Monitor
-[4] Open dxdiag
-[5] Open Windows Gaming settings (Game Mode / Game Bar)
-[6] Open Graphics settings (choose GPU per app)
-[7] Set High performance power plan
-[8] Temp cleanup (safe)
-[9] Launch Roblox Player
-[10] Launch Roblox Studio
-[0] Back
-""")
-        c = input("> ").strip()
-        if c == "1":
-            perf_snapshot()
-        elif c == "2":
-            open_task_manager()
-        elif c == "3":
-            open_resource_monitor()
-        elif c == "4":
-            open_dxdiag()
-        elif c == "5":
-            open_windows_gaming_settings()
-        elif c == "6":
-            open_graphics_settings()
-        elif c == "7":
-            set_high_performance_power_plan()
-        elif c == "8":
-            temp_cleanup_safe()
-        elif c == "9":
-            launch_roblox_player()
-        elif c == "10":
-            launch_roblox_studio()
-        elif c == "0":
-            return
-        else:
-            print("Invalid.")
-            time.sleep(0.6)
+    header("TAB 4 — GAMING (WINDOWS)", "GAMING")
+    print("Windows gaming helpers live here. (This tab is Windows-only.)")
+    pause()
 
 # ------------------ STYLE TAB ------------------
 def style_change_colors_menu():
@@ -2167,7 +1654,7 @@ def style_tab():
             print("Invalid.")
             time.sleep(0.6)
 
-# ------------------ TABS 1 & 2 ------------------
+# ------------------ Tabs 1 & 2 ------------------
 def ip_network_tab():
     while True:
         header("TAB 1 — IP / NETWORK", "IPNET")
@@ -2209,7 +1696,7 @@ def utilities_tab():
 [2] Ping
 [3] Password Generator + Strength
 [4] Notes
-[5] Vault (Encrypted ++)
+[5] Vault (Encrypted)
 [6] Webhook (saved + embed test)
 [7] Settings
 [8] View Activity Logs
@@ -2243,8 +1730,11 @@ def utilities_tab():
 def main_menu():
     log_event(f"{APP_NAME} started {VERSION}.")
     while True:
-        header("", "MAIN")  # <-- no "MAIN MENU — 4 TABS" text anymore
-        print("""
+        header("", "MAIN")
+
+        # (B) Windows/Mobile main menu handling:
+        if is_windows():
+            print("""
 [1] TAB 1: IP / Network
 [2] TAB 2: Utilities
 [3] TAB 3: Tools (Windows)
@@ -2252,6 +1742,16 @@ def main_menu():
 [5] TAB 5: Style
 [0] Exit
 """)
+        else:
+            print("""
+[1] TAB 1: IP / Network
+[2] TAB 2: Utilities
+[3] Tools (Windows-only) — disabled on Mobile/iSH
+[4] Gaming (Windows-only) — disabled on Mobile/iSH
+[5] TAB 5: Style
+[0] Exit
+""")
+
         c = input("> ").strip()
 
         if c == "1":
@@ -2259,9 +1759,20 @@ def main_menu():
         elif c == "2":
             utilities_tab()
         elif c == "3":
-            tools_tab()
+            if not is_windows():
+                header("WINDOWS-ONLY TAB", "TOOLS")
+                print("Tools tab needs Windows.")
+                print("On iPhone/iPad: use iSH for the app, but Windows tools are disabled there.")
+                pause()
+            else:
+                tools_tab()
         elif c == "4":
-            gaming_tab()
+            if not is_windows():
+                header("WINDOWS-ONLY TAB", "GAMING")
+                print("Gaming tab needs Windows.")
+                pause()
+            else:
+                gaming_tab()
         elif c == "5":
             style_tab()
         elif c == "0":
@@ -2276,4 +1787,3 @@ def main_menu():
 
 if __name__ == "__main__":
     main_menu()
-
