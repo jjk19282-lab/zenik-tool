@@ -2,6 +2,8 @@
 
 Terminal-based Python multi-tool.
 
+## python3+ required
+
 ## Features
 - IP lookup + geo map + distance
 - Password generator
